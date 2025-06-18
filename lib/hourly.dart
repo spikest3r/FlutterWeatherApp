@@ -74,9 +74,9 @@ class _HourlyForecastState extends State<HourlyForecastToday> {
       ForecastEntry entry = forecastHourly[dayIndex][i];
       String entryIcon = determineIcon(entry.weatherCode,false);
       Widget w = Row(spacing:5,mainAxisAlignment: MainAxisAlignment.center, children: [
-        Text(entry.timeStamp, style: TextStyle(fontSize: 25)),
+        Text(entry.timeStamp, style: TextStyle(fontSize: 15)),
         Image.asset(entryIcon),
-        Text("${entry.temp} °${getUnit()}", style: TextStyle(fontSize: 30)),
+        Text("${entry.temp} °${getUnit()}", style: TextStyle(fontSize: 17)),
         SizedBox(width: 20,),
         Row(spacing: 5, mainAxisAlignment: MainAxisAlignment.center,children: [
           SizedBox(width: 30,child: Image.asset("assets/27.png")), // rain drop icon
