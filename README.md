@@ -1,16 +1,18 @@
-# weather
+# Weather app
 
-Weather app
+Made using Flutter and Dart.
 
-## Getting Started
+Uses open-meteo.com API to fetch weather.
 
-This project is a starting point for a Flutter application.
+I made this app when learning Flutter. Compiled for Web, Windows and Android (APK).
 
-A few resources to get you started if this is your first Flutter project:
+Hosted on https://weather.nulldog.xyz/
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## How to use
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+In bottom right corner there is Settings button
+
+In settings menu you can select city and switch units to Fahrenheit.
+
+
+## When changing city, please press "Reload" to fetch new info
