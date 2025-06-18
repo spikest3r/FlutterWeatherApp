@@ -1,4 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:weather/citySelect.dart';
+import 'dart:convert'; // for jsonDecode
+import 'package:weather/data.dart';
+import 'package:weather/helpers.dart';
+import 'package:weather/hourly.dart';
 
 void main() {
   runApp(const MyApp());
@@ -7,116 +13,187 @@ void main() {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Weather',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+      colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MyHomePage(),
     );
   }
 }
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+  const MyHomePage({super.key});
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+  final String title = "Weather";
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+final String defaultIcon = "assets/1.png";
 
-  void _incrementCounter() {
+String getApiLink(double latitude, double longitude) {
+  final String apiWeatherLink =
+      "https://api.open-meteo.com/v1/forecast?latitude=$latitude&longitude=$longitude&daily=sunset,sunrise,weather_code,"
+      "precipitation_sum,temperature_2m_max,temperature_2m_min&hourly=weather_code,precipitation,visibility,temperature_2m,relative_humidity_2m"
+      "&current=temperature_2m,relative_humidity_2m,is_day,weather_code,precipitation&timezone=auto&forecast_days=4${getUnit() == "F" ? "&temperature_unit=fahrenheit" : ""}";
+  return apiWeatherLink;
+}
+
+class ForecastEntry {
+  String dateStamp;
+  double tempMin;
+  double tempMax;
+  double avgPrecp; // sum in mm
+  int weatherCode;
+  ForecastEntry(this.dateStamp, this.tempMin, this.tempMax, this.avgPrecp, this.weatherCode);
+}
+
+double tempToday = 0;
+int humidityToday = 0;
+double precipitationToday = 0;
+String sunriseToday = "";
+String sunsetToday = "";
+List<ForecastEntry> forecast3days = [];
+
+String city = "";
+String iconPath = defaultIcon;
+String rawJsonData = "";
+
+Future<String> fetchWeather() async {
+  final url = Uri.parse(getApiLink(LocationStorage.latitude, LocationStorage.longitude));
+  try {
+    final response = await http.get(url); // fetch data from api
+    if (response.statusCode == 200) { // if we got data
+      rawJsonData = response.body;
+      return rawJsonData;
+    } else {
+      return "error";
+    }
+  } catch(ex) {
+    print(ex);
+    return "error";
+  }
+}
+
+Widget _renderForecast() { // todo: add date display
+  List<Widget> widgets = [];
+  for(int i = 0; i < 3; i++) {
+    ForecastEntry entry = forecast3days[i+1];
+    String entryIcon = determineIcon(entry.weatherCode,false);
+    Widget w = Column(spacing:5,mainAxisAlignment: MainAxisAlignment.center, children: [
+      Text(entry.dateStamp),
+      Image.asset(entryIcon),
+      Text("Max ${entry.tempMax} °${getUnit()}"),
+      Text("Min ${entry.tempMin} °${getUnit()}"),
+      Row(spacing: 5, mainAxisAlignment: MainAxisAlignment.center,children: [
+        SizedBox(width: 30,child: Image.asset("assets/27.png")), // rain drop icon
+        Text("${entry.avgPrecp} mm")
+      ],)
+    ],);
+    widgets.add(w);
+  }
+  return Row(spacing: 20, mainAxisAlignment: MainAxisAlignment.center, children: widgets,);
+}
+
+class _MyHomePageState extends State<MyHomePage>{
+  bool errorState = false;
+  bool loaded = false;
+
+  Future<void> updateWeatherInfo() async {
+    await LocationStorage.Load();
+    String rawJson = await fetchWeather();
+    if(rawJson == "error") {
+      errorState = true;
+      print("error net");
+      return;
+    }
+    errorState = false;
+    loaded = true;
+    final data = jsonDecode(rawJson);
+    print("load weather info");
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      tempToday = data["current"]["temperature_2m"];
+      humidityToday = data["current"]["relative_humidity_2m"];
+      precipitationToday = data["current"]["precipitation"];
+      sunriseToday = data["daily"]["sunrise"][0].toString().split("T")[1]; // 0 is today
+      sunsetToday = data["daily"]["sunset"][0].toString().split("T")[1];
+      iconPath = determineIcon(data["current"]["weather_code"], data["current"]["is_day"] == 0);
+      // forecast data
+      forecast3days.clear();
+      for(int i = 0; i < 4; i++) { // skip zero here because we skip forecast entry for today
+        ForecastEntry entry = ForecastEntry(data["daily"]["time"][i],
+            data["daily"]["temperature_2m_min"][i],
+            data["daily"]["temperature_2m_max"][i],
+            data["daily"]["precipitation_sum"][i],
+            data["daily"]["weather_code"][i]);
+        print(entry.weatherCode);
+        forecast3days.add(entry);
+      }
     });
   }
 
   @override
+  void initState() {
+    super.initState();
+    print("Updating weather");
+    updateWeatherInfo();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
+    if(LocationStorage.update) {
+      LocationStorage.update = false;
+      print("Updating weather build()");
+      updateWeatherInfo();
+    }
+    if(errorState || !loaded) {
+      print("$loaded $errorState");
+      return Scaffold(
+        appBar: AppBar(
+          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+          title: Text(widget.title),
+        ),
+        body: Center(child: Text(errorState ? "Network error" : "Loading...")));
+    }
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
         title: Text(widget.title),
       ),
       body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
         child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
+            Text(LocationStorage.city),
+            Image.asset(iconPath),
+            Text("$tempToday °${getUnit()}", style: TextStyle(fontSize: 48),),
+            Text("Relative humidity: $humidityToday%"),
+            Text("Precipitation: $precipitationToday%"),
+            Text("Sunrise: $sunriseToday"),
+            Text("Sunset: $sunsetToday"),
+            SizedBox(height: 16,), // spacing
+            ElevatedButton(onPressed: (){
+              Navigator.push(context, MaterialPageRoute(builder: (context) => HourlyForecastToday(rawJson: rawJsonData,)));
+            }, child: const Text("Hourly forecast")),
+            SizedBox(height: 16,), // spacing
+            Text("3 day forecast", style: TextStyle(fontSize: 30)),
+            SizedBox(height: 8,), // spacing
+            _renderForecast(), // forecast as row of cols
+            SizedBox(height: 16,), // spacing
+            ElevatedButton(onPressed: (){
+              updateWeatherInfo();
+            }, child: const Text("Reload")),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+      floatingActionButton: FloatingActionButton(onPressed: () {
+        Navigator.push(context, MaterialPageRoute(builder: (context) => CitySelection())).then((_) => setState(() {updateWeatherInfo();}));
+      }, child: const Icon(Icons.settings)),
     );
   }
 }
